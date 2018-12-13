@@ -6,11 +6,14 @@ import boto3
 from datetime import datetime, timedelta
 import gzip
 import json
+import os
 from pprint import pprint
 from pytz import timezone
+import requests
 from tzlocal import get_localzone
 
 date_format = "%Y/%m/%d %H:%M"
+discord_post_url = os.environ["DISCORD_POST_URL"]
 local_zone = get_localzone()
 
 
@@ -33,6 +36,21 @@ def get_last_no(logEvent):
     # }
     last = int(bflog["last"])
     return last
+
+
+def post_to_discord(message):
+
+    post_data = {
+        "content": message
+    }
+
+    try:
+        response = requests.post(discord_post_url, data=json.dumps(post_data),
+                                 headers={'Content-Type': "application/json"})
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print('Request failed: {}'.format(e))
+        # log.error('Request failed: {}'.format(e))
 
 
 # 名前は Lambda の設定名に合わせる
@@ -59,11 +77,13 @@ def lambda_handler(event, context):
     - 無限ループの検知
 
     - 無限ループの強制停止
-        万が一の無限ループに陥ったら、CloudWatch 側でストリーム配信設定を削除するか、
-        bitflyer_data_getter_launcher 側でトリガー設定している CloudWatch Logs を無効にすれば止まる
+        万が一の無限ループに陥ったら、以下のいずれかの方法で停止させることができる
+        - CloudWatch 側でストリーム配信設定を削除するか、
+        - bitflyer_data_getter_launcher 側でトリガー設定している CloudWatch Logs を無効にする
+        - bitflyer_data_getter の msg の "state": "completed" 行をコメントアウトしてアップロード
 
     """
-    latest_execution_no = 3456  # 最新の約定番号
+    latest_execution_no = 2000000  # 最新の約定番号
 
     # pprint(event)
     json_data = decode_event_data(event['awslogs']['data'])
@@ -73,10 +93,13 @@ def lambda_handler(event, context):
     symbol = "BTC_JPY"
     next_first = last + 1
     if latest_execution_no < next_first:
-        print('{latest_execution_no} までの取得が終わりました')
-        return
+        jst_now = datetime.now(local_zone).strftime(date_format)
+        msg = '[{}] {} までの取得が終わりました'.format(jst_now, latest_execution_no)
+        print(msg)
+        post_to_discord(msg)
+        return msg
 
-    next_range = 1000   # 次の bitflyer_data_getter で取得する件数
+    next_range = 10000   # 次の bitflyer_data_getter で取得する件数
     next_last = last + next_range
     if latest_execution_no < next_last:
         next_last = latest_execution_no
@@ -94,8 +117,12 @@ def lambda_handler(event, context):
         InvocationType="Event",
         Payload=json.dumps(params)
     )
-    print('bitflyer_data_getter invoked (symbol: {}, first: {}, last: {})'.format(
-        symbol, next_first, next_last))
+
+    jst_now = datetime.now(local_zone).strftime(date_format)
+    msg = '[{}] bitflyer_data_getter invoked (symbol: {}, first: {}, last: {})'.format(
+        jst_now, symbol, next_first, next_last)
+    print(msg)
+    post_to_discord(msg)
 
 
 if __name__ == '__main__':

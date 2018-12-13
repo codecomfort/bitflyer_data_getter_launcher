@@ -8,6 +8,7 @@ verify_ssl = true
 [packages]
 tzlocal = "*"
 boto3 = "*"
+requests = "*"
 
 [requires]
 python_version = "3.7"
