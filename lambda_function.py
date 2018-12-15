@@ -4,6 +4,7 @@
 import base64
 import boto3
 from datetime import datetime, timedelta
+from distutils.util import strtobool
 import gzip
 import json
 import os
@@ -32,10 +33,12 @@ def get_last_no(logEvent):
     #     "name": "bitflyer executions",
     #     "first": 1,
     #     "last": 1000,
-    #     "state": "completed"
+    #     "state": "completed",
+    #     "invoke_next": "false"
     # }
     last = int(bflog["last"])
-    return last
+    invoke_next = bflog["invoke_next"]
+    return last, invoke_next
 
 
 def post_to_discord(message):
@@ -80,26 +83,36 @@ def lambda_handler(event, context):
         万が一の無限ループに陥ったら、以下のいずれかの方法で停止させることができる
         - CloudWatch 側でストリーム配信設定を削除するか、
         - bitflyer_data_getter_launcher 側でトリガー設定している CloudWatch Logs を無効にする
-        - bitflyer_data_getter の msg の "state": "completed" 行をコメントアウトしてアップロード
-
     """
-    latest_execution_no = 2000000  # 最新の約定番号
+    if event.get("manual") is not None:
+        manual = event["manual"]
 
-    # pprint(event)
-    json_data = decode_event_data(event['awslogs']['data'])
-    logEvent_latest = json_data["logEvents"][-1]
-    last = get_last_no(logEvent_latest)
+        last = int(manual["first"]) - 1
+        invoke_next = manual["invoke_next"]
+        next_range = int(manual["range"])
+        symbol = manual["symbol"]
+        next_first = int(manual["first"])
+        latest_execution_no = next_first + next_range
+    else:
+        json_data = decode_event_data(event['awslogs']['data'])
+        logEvent_latest = json_data["logEvents"][-1]
 
-    symbol = "BTC_JPY"
-    next_first = last + 1
-    if latest_execution_no < next_first:
+        last, invoke_next = get_last_no(logEvent_latest)
+        next_range = 10000   # 次の bitflyer_data_getter で取得する件数
+        symbol = "BTC_JPY"
+        next_first = last + 1
+        latest_execution_no = 640000000  # 最新の約定番号
+
+    # 終了条件
+    # 最終番号を超えようとしているか、
+    # 手動実行でなく且つinvokeNext=Falseが指定されている場合
+    if (latest_execution_no < next_first) or (event.get("manual") is None and not bool(strtobool(invoke_next))):
         jst_now = datetime.now(local_zone).strftime(date_format)
         msg = '[{}] {} までの取得が終わりました'.format(jst_now, latest_execution_no)
         print(msg)
         post_to_discord(msg)
         return msg
 
-    next_range = 10000   # 次の bitflyer_data_getter で取得する件数
     next_last = last + next_range
     if latest_execution_no < next_last:
         next_last = latest_execution_no
@@ -108,6 +121,7 @@ def lambda_handler(event, context):
         "symbol": symbol,
         "first": next_first,
         "last": next_last,
+        "invoke_next": invoke_next
     }
 
     lambda_client = boto3.client("lambda")
@@ -126,9 +140,21 @@ def lambda_handler(event, context):
 
 
 if __name__ == '__main__':
+    # CloudWatch logs からのイベントは以下のような形式でくる
+    # event = {
+    #     'awslogs': {
+    #         'data': 'H4sIAAAAAAAAAG1Qy2rrMBT8lSK6jGs9Lcm7wE1LoY9FvGocjGwf55rrR7CUPgj59x4nTVcXtBBz5syZmSPpwXu3g+xrDyQlf5bZsnherdfLhxVZkPFjgAlhI6UQklprpUa4G3cP03jY4yR2Hz7uXF/WLi7b0HRfMBW1C67YQQi4fGavwwSuRzqnzMSMx0zEm9unZbZaZ9sqUY3iYGSlhATDrHBJXQsjagWlZRQl/KH01dTuQzsO922Hup6kG/J0vnsRL/53vejcYaj+oo3t2cfqHYYwrx5JW6MdIaU0SluphLBGGqutYIlk+EsoN4nQmBxjc6a0oFwraekcAS2FFpsLrscSmJJSc41PKbu4Norym8eX+9dtHuaViPGIiYzZlPKU6jukvuXBioonxjZR01AbMQYmKpsEImO5MCWjxkqeh2NOBtdDTtKbnFxz3sAnVIe5EZ+TBQ6advJh5nCKJimbsc79QoJSOkNoOvxIVWO/7yBAfRFoh/fxHxQDfIbLvHGdR+opH8hpe/oGd1JKeiwCAAA='
+    #     }
+    # }
+    # テスト実行のパラメータは以下の形式
     event = {
-        'awslogs': {
-            'data': 'H4sIAAAAAAAAAG1Qy27bMBD8lYDo0aq4fInUzUCcIEDSHKxTTUOg5JUjQA9DopsGhv89Kze59Ti7szOzc2E9znM4YvFxQpaz+3WxLl822+36ccNWbHwfcKKxVUpKxZ1zKqNxNx4fp/F8ok0a3ue0C311CGnVxqb7wKk8hBjKI8ZIxzf2Nk4YeqILDjYFkYJMdz+e18VmW+yt0HVd2UoAgrK2slwLMsxQOqxQ1CQxn6u5ntpTbMfhoe1Id2b5jj3ffP+Jl/9zL7twHuo3irG/5dj8wSEupxfWHiiOVOSjtBZacSk1l8YI7rjgmXVKWe7AaecMgDEgDSghpDScK4oUW2ouhp5KAK2UyTIJJgOz+m6U5P2we/r18Lr3cfk7AZGALLjOOeTa/CTybx+pVmykkEmDTiUAaBOrg0iU42iFQxka5ePFsyH06Fl+59n3p3f4F+vz0sns2YoWTTvNceHAgrrwBTjnC6a08UuhHvtThxEPnl39wK776yedOnBhCQIAAA=='
+        "manual": {
+            "symbol": "BTC_JPY",
+            # 取得開始の id
+            "first": 3000001,
+            # first からの増分
+            "range": 10000,
+            "invoke_next": "true"
         }
     }
     lambda_handler(event, None)
