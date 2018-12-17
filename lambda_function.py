@@ -98,10 +98,13 @@ def lambda_handler(event, context):
         logEvent_latest = json_data["logEvents"][-1]
 
         last, invoke_next = get_last_no(logEvent_latest)
-        next_range = 10000   # 次の bitflyer_data_getter で取得する件数
-        symbol = "BTC_JPY"
+        # 次の bitflyer_data_getter で取得する件数
+        next_range = int(os.environ["RANGE"])
+        # リトライ失敗してラムダがコケた場合、この単位で取得し直ししなるので
+        # あまり大きい値も微妙
+        symbol = os.environ["SYMBOL"]
         next_first = last + 1
-        latest_execution_no = 640000000  # 最新の約定番号
+        latest_execution_no = int(os.environ["LATEST_EXECUTION_NO"])
 
     # 終了条件
     # 最終番号を超えようとしているか、
@@ -126,7 +129,7 @@ def lambda_handler(event, context):
 
     lambda_client = boto3.client("lambda")
     lambda_client.invoke(
-        FunctionName="bitflyer_data_getter",
+        FunctionName=os.environ["INVOKE_FUNCTION_NAME"],
         # 非同期呼び出し(呼び出し先の lambda の完了を待たない)
         InvocationType="Event",
         Payload=json.dumps(params)
