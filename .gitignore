@@ -2,3 +2,5 @@
 .vscode/
 lambda.*
 memo.md
+.lambda_uploader_temp
+*.pyc
