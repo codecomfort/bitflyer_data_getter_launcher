@@ -14,7 +14,7 @@ import requests
 from tzlocal import get_localzone
 
 date_format = "%Y/%m/%d %H:%M"
-discord_post_url = os.environ["DISCORD_POST_URL"]
+discord_post_url = os.environ.get("DISCORD_POST_URL")
 local_zone = get_localzone()
 
 
@@ -42,6 +42,9 @@ def get_last_no(logEvent):
 
 
 def post_to_discord(message):
+
+    if discord_post_url is None:
+        return
 
     post_data = {
         "content": message
