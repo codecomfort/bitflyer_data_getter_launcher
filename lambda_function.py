@@ -96,6 +96,7 @@ def lambda_handler(event, context):
         symbol = manual["symbol"]
         next_first = int(manual["first"])
         latest_execution_no = next_first + next_range
+        bucket_name = os.environ["S3_BUCKET_NAME"]
     else:
         json_data = decode_event_data(event['awslogs']['data'])
         logEvent_latest = json_data["logEvents"][-1]
@@ -108,6 +109,7 @@ def lambda_handler(event, context):
         symbol = os.environ["SYMBOL"]
         next_first = last + 1
         latest_execution_no = int(os.environ["LATEST_EXECUTION_NO"])
+        bucket_name = os.environ["S3_BUCKET_NAME"]
 
     # 終了条件
     # 最終番号を超えようとしているか、
@@ -127,20 +129,21 @@ def lambda_handler(event, context):
         "symbol": symbol,
         "first": next_first,
         "last": next_last,
-        "invoke_next": invoke_next
+        "invoke_next": invoke_next,
+        "bucket_name": bucket_name
     }
 
     lambda_client = boto3.client("lambda")
+    function_name = os.environ["INVOKE_FUNCTION_NAME"]
     lambda_client.invoke(
-        FunctionName=os.environ["INVOKE_FUNCTION_NAME"],
+        FunctionName=function_name,
         # 非同期呼び出し(呼び出し先の lambda の完了を待たない)
         InvocationType="Event",
         Payload=json.dumps(params)
     )
 
     jst_now = datetime.now(local_zone).strftime(date_format)
-    msg = '[{}] bitflyer_data_getter invoked (symbol: {}, first: {}, last: {})'.format(
-        jst_now, symbol, next_first, next_last)
+    msg = f'[{jst_now}] bitflyer_data_getter invoked (lambda: {function_name}, symbol: {symbol}, first: {next_first}, last: {next_last}, bucket: {bucket_name})'
     print(msg)
     post_to_discord(msg)
 
@@ -157,7 +160,7 @@ if __name__ == '__main__':
         "manual": {
             "symbol": "BTC_JPY",
             # 取得開始の id
-            "first": 3000001,
+            "first": 657569728,
             # first からの増分
             "range": 10000,
             "invoke_next": "true"

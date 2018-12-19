@@ -14,6 +14,7 @@
     "INVOKE_FUNCTION_NAME": "bitflyer_data_getter",
     "LATEST_EXECUTION_NO": "650000000", // この番号まで繰り返し INVOKE_FUNCTION_NAME の Lambda を起動
     "RANGE": "300000", // INVOKE_FUNCTION_NAME の Lambda が起動時間(300 秒)内に取得できる程度の量を指定
+    "S3_BUCKET_NAME": "bitflyer-executions",
     "SYMBOL": "BTC_JPY"
   }
 }

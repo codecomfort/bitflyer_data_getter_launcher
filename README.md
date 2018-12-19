@@ -14,6 +14,7 @@
 
 1. (optional)Set your environment variables
    - export DISCORD_POST_URL="your discord webhooks address"
+   - export INVOKE_FUNCTION_NAME="bitflyer_data_getter"
 2. Edit sample data in lambda_function.py
    - event
 3. pipenv shell
